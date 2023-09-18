@@ -28,7 +28,7 @@ const API_BASE = 'https://saillogger.com/api/v1/collector'
 const fs = require('fs')
 const filePath = require('path')
 const request = require('request')
-const sqlite3 = require('better-sqlite3')
+const Database = require('better-sqlite3')
 const express = require('express')
 const bodyParser = require('body-parser')
 const cors = require('cors')
@@ -167,9 +167,9 @@ module.exports = function(app) {
 
     sendMetadata(options);
 
-    let dbFile= filePath.join(app.getDataDirPath(), 'saillogger.sqlite3');
-    db = new sqlite3.Database(dbFile);
-    db.run('CREATE TABLE IF NOT EXISTS buffer(ts REAL,' +
+    let dbFile= filePath.join(app.getDataDirPath(), 'saillogger.sqlite3.db');
+    db = new Database(dbFile);
+    db.exec('CREATE TABLE IF NOT EXISTS buffer(ts REAL,' +
            '                                 latitude REAL,' +
            '                                 longitude REAL,' +
            '                                 speedOverGround REAL,' +
@@ -373,9 +373,14 @@ module.exports = function(app) {
                   speedOverGround, courseOverGroundTrue, windSpeedApparent,
                   angleSpeedApparent];
 
-    db.run('INSERT INTO buffer VALUES(?, ?, ?, ?, ?, ?, ?)', values, function(err) {
-      windSpeedApparent = 0;
-    });
+    const stmt = db.prepare('INSERT INTO buffer (ts, latitude, longitude REAL, speedOverGround, courseOverGroundTrue, windSpeedApparent, angleSpeedApparent) VALUES(?, ?, ?, ?, ?, ?, ?)');
+
+    var info = stmt.run(values);
+
+
+
+
+    windSpeedApparent = 0;
     position.changedOn = null;
   }
 
@@ -393,8 +398,11 @@ module.exports = function(app) {
 
       request(httpOptions, function (error, response, body) {
         if (!error && response.statusCode == 200) {
+
           let lastTs = body.processedUntil;
-          db.run('DELETE FROM buffer where ts <= ' + lastTs);
+          const stmt = db.prepare('DELETE FROM buffer where ts <= ?');
+          var info = stmt.run(lastTs);
+          //db.run('DELETE FROM buffer where ts <= ' + lastTs);
           lastSuccessfulUpdate = Date.now();
           app.debug(`Successfully sent ${data.length} record(s) to the server`);
         } else if (!error && response.statusCode == 204) {
