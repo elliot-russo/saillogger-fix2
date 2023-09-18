@@ -660,20 +660,23 @@ module.exports = function(app) {
       case 'navigation.position':
         let source = data.updates[0]['$source'];
         if ((gpsSource) && (source != gpsSource)) {
-          app.debug(`Skipping position from GPS resource ${source}`);
+            //app.debug(`Skipping position from GPS resource ${source}`);
 	        break;
-	      }
-        else
-          app.debug(`Using position from GPS resource ${source}`);
+	    }
+        //else
+        //  app.debug(`Using position from GPS resource ${source}`);
 
         if (position) {
+          //app.debug(`Using position from GPS resource ${source}`);
+
           let distance = calculateDistance(position.latitude,
                                            position.longitude,
                                            value.latitude,
                                            value.longitude);
 	        let timeBetweenPositions = Date.now() - position.changedOn;
+
 	        if ((timeBetweenPositions <= 2 * 60 * 1000) && (distance >= 5)) {
-            app.error(`Erroneous position reading. ` +
+              app.error(`Erroneous position reading. ` +
 	              `Moved ${distance} miles in ${timeBetweenPositions/1000} seconds. ` +
                       `Ignoring the position: ${position.latitude}, ${position.longitude}`);
 	          return;
@@ -687,10 +690,10 @@ module.exports = function(app) {
 
             // Want submissions every DB_UPDATE_MINUTES at the very least
 	          if (timePassed >= DB_UPDATE_MINUTES * 60 * 1000) {
-              app.debug(`Updating database, ${DB_UPDATE_MINUTES} min passed since last update`);
-              position = value;
-              position.changedOn = Date.now();
-              updateDatabase();
+                app.debug(`Updating database, ${DB_UPDATE_MINUTES} min passed since last update`);
+                position = value;
+                position.changedOn = Date.now();
+                updateDatabase();
             }
 
             // Or a meaningful time passed while moving
@@ -745,7 +748,7 @@ module.exports = function(app) {
         break;
       case 'navigation.courseOverGroundTrue':
         // Keep the previous 3 values
-        courseOverGroundTrue = radiantToDegrees(value);
+            courseOverGroundTrue = radiantToDegrees(value);
 	      previousCOGs.unshift(courseOverGroundTrue);
 	      previousCOGs = previousCOGs.slice(0, 6);
         break;
