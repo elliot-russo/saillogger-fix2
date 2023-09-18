@@ -391,7 +391,7 @@ module.exports = function(app) {
 
   function submitDataToServer() {
 
-    const stmt = 'SELECT * FROM buffer ORDER BY ts';
+    const stmt = db.prepare('SELECT * FROM buffer ORDER BY ts');
     const data = stmt.all();
 
     if (data.length == 0) {
