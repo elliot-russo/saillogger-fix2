@@ -214,21 +214,27 @@ module.exports = function(app) {
     }, MONITORING_SUBMIT_INTERVAL * 60 * 1000);
 
     statusProcess = setInterval( function() {
-      db.all('SELECT * FROM buffer ORDER BY ts', function(err, data) {
-        let message;
-        if (data.length == 1) {
-          message = `${data.length} entry in the queue,`;
-        } else {
-          message = `${data.length} entries in the queue,`;
-        }
-        if (lastSuccessfulUpdate) {
-          let since = timeSince(lastSuccessfulUpdate);
-          message += ` last connection to the server was ${since} ago.`;
-        } else {
-          message += ` no successful connection to the server since restart.`;
-        }
-        app.setPluginStatus(message);
-      })
+
+      const stmt = db.prepare('SELECT * FROM buffer ORDER BY ts');
+      const data = stmt.all();
+
+      let message;
+
+      if (data.length == 1) {
+        message = `${data.length} entry in the queue,`;
+      } else {
+        message = `${data.length} entries in the queue,`;
+      }
+
+      if (lastSuccessfulUpdate) {
+        let since = timeSince(lastSuccessfulUpdate);
+        message += ` last connection to the server was ${since} ago.`;
+      } else {
+        message += ` no successful connection to the server since restart.`;
+      }
+
+      app.setPluginStatus(message);
+
     }, 31*1000);
   }
 
@@ -266,8 +272,8 @@ module.exports = function(app) {
         app.debug(`Received a configuration request but collector id already set, ignoring`);
         return res.json({
           success: false,
-	  reason: 'CollectorID already set',
-	  model: model
+	        reason: 'CollectorID already set',
+	        model: model
         });
       }
       let collectorId = req.body.collectorId;
@@ -286,8 +292,8 @@ module.exports = function(app) {
           startPlugin(configuration);
           res.json({
             success: true,
-	    reason: null,
-	    model: model
+	          reason: null,
+	          model: model
           });
         });
       }
@@ -352,8 +358,8 @@ module.exports = function(app) {
       if (!error && response.statusCode == 200) {
         app.debug('Successfully sent metadata to the server');
         lastSuccessfulUpdate = Date.now();
-	sendMonitoringData(options);
-	submitDataToServer();
+	      sendMonitoringData(options);
+	      submitDataToServer();
         metdataSubmitted = true;
       } else {
         app.debug('Metadata submission to the server failed');
@@ -373,45 +379,50 @@ module.exports = function(app) {
                   speedOverGround, courseOverGroundTrue, windSpeedApparent,
                   angleSpeedApparent];
 
-    const stmt = db.prepare('INSERT INTO buffer (ts, latitude, longitude REAL, speedOverGround, courseOverGroundTrue, windSpeedApparent, angleSpeedApparent) VALUES(?, ?, ?, ?, ?, ?, ?)');
+    const stmt = db.prepare('INSERT INTO buffer (ts, latitude, longitude, speedOverGround, courseOverGroundTrue, windSpeedApparent, angleSpeedApparent) VALUES(?, ?, ?, ?, ?, ?, ?)');
 
     var info = stmt.run(values);
 
-
-
+    app.debug('Data buffered');
 
     windSpeedApparent = 0;
     position.changedOn = null;
   }
 
   function submitDataToServer() {
-    db.all('SELECT * FROM buffer ORDER BY ts', function(err, data) {
-      if (data.length == 0) {
-        app.debug('Local cache is empty, sending an empty ping');
+
+    const stmt = 'SELECT * FROM buffer ORDER BY ts';
+    const data = stmt.all();
+
+    if (data.length == 0) {
+      app.debug('Local cache is empty, sending an empty ping');
+    }
+
+    let httpOptions = {
+      uri: API_BASE + '/' + uuid + '/push',
+      method: 'POST',
+      json: JSON.stringify(data)
+    };
+
+    request(httpOptions, function (error, response, body) {
+      if (!error && response.statusCode == 200) {
+
+        let lastTs = body.processedUntil;
+
+        const stmt = db.prepare('DELETE FROM buffer where ts <= ?');
+        var info = stmt.run(lastTs);
+
+        lastSuccessfulUpdate = Date.now();
+
+        app.debug(`Successfully sent ${info.changes} record(s) to the server`);
+
+      } else if (!error && response.statusCode == 204) {
+        app.debug('Server responded with HTTP-204');
+      } else {
+        app.debug(`Connection to the server failed, retry in ${SUBMIT_INTERVAL} min`);
       }
-
-      let httpOptions = {
-        uri: API_BASE + '/' + uuid + '/push',
-        method: 'POST',
-        json: JSON.stringify(data)
-      };
-
-      request(httpOptions, function (error, response, body) {
-        if (!error && response.statusCode == 200) {
-
-          let lastTs = body.processedUntil;
-          const stmt = db.prepare('DELETE FROM buffer where ts <= ?');
-          var info = stmt.run(lastTs);
-          //db.run('DELETE FROM buffer where ts <= ' + lastTs);
-          lastSuccessfulUpdate = Date.now();
-          app.debug(`Successfully sent ${data.length} record(s) to the server`);
-        } else if (!error && response.statusCode == 204) {
-          app.debug('Server responded with HTTP-204');
-        } else {
-          app.debug(`Connection to the server failed, retry in ${SUBMIT_INTERVAL} min`);
-        }
-      });
     });
+
   }
 
   function getKeyValue(key, maxAge) {
