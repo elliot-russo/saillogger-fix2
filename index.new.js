@@ -28,7 +28,7 @@ const API_BASE = 'https://saillogger.com/api/v1/collector'
 const fs = require('fs')
 const filePath = require('path')
 const request = require('request')
-const Database = require('better-sqlite3')
+const sqlite3 = require('sqlite3')
 const express = require('express')
 const bodyParser = require('body-parser')
 const cors = require('cors')
@@ -65,7 +65,6 @@ module.exports = function(app) {
   plugin.start = function(options) {
     configuration = options;
     startPlugin(options);
-    testSD();
   }
 
   plugin.stop =  function() {
@@ -77,14 +76,6 @@ module.exports = function(app) {
       db.close();
     }
   };
-
-  function testSD(){
-
-    let dbFile2= filePath.join('/run/media/mmcblk0p1/triplog', 'saillogger.sqlite3.db');
-    db = new Database(dbFile2);
-    db.exec('CREATE TABLE IF NOT EXISTS buffer(ts REAL, angleSpeedApparent REAL)');
-    
-  }
 
   plugin.schema = {
     type: 'object',
@@ -176,9 +167,9 @@ module.exports = function(app) {
 
     sendMetadata(options);
 
-    let dbFile= filePath.join(app.getDataDirPath(), 'saillogger.sqlite3.db');
-    db = new Database(dbFile);
-    db.exec('CREATE TABLE IF NOT EXISTS buffer(ts REAL,' +
+    let dbFile= filePath.join(app.getDataDirPath(), 'saillogger.sqlite3');
+    db = new sqlite3.Database(dbFile);
+    db.run('CREATE TABLE IF NOT EXISTS buffer(ts REAL,' +
            '                                 latitude REAL,' +
            '                                 longitude REAL,' +
            '                                 speedOverGround REAL,' +
@@ -223,27 +214,21 @@ module.exports = function(app) {
     }, MONITORING_SUBMIT_INTERVAL * 60 * 1000);
 
     statusProcess = setInterval( function() {
-
-      const stmt = db.prepare('SELECT * FROM buffer ORDER BY ts');
-      const data = stmt.all();
-
-      let message;
-
-      if (data.length == 1) {
-        message = `${data.length} entry in the queue,`;
-      } else {
-        message = `${data.length} entries in the queue,`;
-      }
-
-      if (lastSuccessfulUpdate) {
-        let since = timeSince(lastSuccessfulUpdate);
-        message += ` last connection to the server was ${since} ago.`;
-      } else {
-        message += ` no successful connection to the server since restart.`;
-      }
-
-      app.setPluginStatus(message);
-
+      db.all('SELECT * FROM buffer ORDER BY ts', function(err, data) {
+        let message;
+        if (data.length == 1) {
+          message = `${data.length} entry in the queue,`;
+        } else {
+          message = `${data.length} entries in the queue,`;
+        }
+        if (lastSuccessfulUpdate) {
+          let since = timeSince(lastSuccessfulUpdate);
+          message += ` last connection to the server was ${since} ago.`;
+        } else {
+          message += ` no successful connection to the server since restart.`;
+        }
+        app.setPluginStatus(message);
+      })
     }, 31*1000);
   }
 
@@ -281,8 +266,8 @@ module.exports = function(app) {
         app.debug(`Received a configuration request but collector id already set, ignoring`);
         return res.json({
           success: false,
-	        reason: 'CollectorID already set',
-	        model: model
+	  reason: 'CollectorID already set',
+	  model: model
         });
       }
       let collectorId = req.body.collectorId;
@@ -301,8 +286,8 @@ module.exports = function(app) {
           startPlugin(configuration);
           res.json({
             success: true,
-	          reason: null,
-	          model: model
+	    reason: null,
+	    model: model
           });
         });
       }
@@ -367,8 +352,8 @@ module.exports = function(app) {
       if (!error && response.statusCode == 200) {
         app.debug('Successfully sent metadata to the server');
         lastSuccessfulUpdate = Date.now();
-	      sendMonitoringData(options);
-	      submitDataToServer();
+	sendMonitoringData(options);
+	submitDataToServer();
         metdataSubmitted = true;
       } else {
         app.debug('Metadata submission to the server failed');
@@ -388,50 +373,37 @@ module.exports = function(app) {
                   speedOverGround, courseOverGroundTrue, windSpeedApparent,
                   angleSpeedApparent];
 
-    const stmt = db.prepare('INSERT INTO buffer (ts, latitude, longitude, speedOverGround, courseOverGroundTrue, windSpeedApparent, angleSpeedApparent) VALUES(?, ?, ?, ?, ?, ?, ?)');
-
-    var info = stmt.run(values);
-
-    app.debug('Data buffered');
-
-    windSpeedApparent = 0;
+    db.run('INSERT INTO buffer VALUES(?, ?, ?, ?, ?, ?, ?)', values, function(err) {
+      windSpeedApparent = 0;
+    });
     position.changedOn = null;
   }
 
   function submitDataToServer() {
-
-    const stmt = db.prepare('SELECT * FROM buffer ORDER BY ts');
-    const data = stmt.all();
-
-    if (data.length == 0) {
-      app.debug('Local cache is empty, sending an empty ping');
-    }
-
-    let httpOptions = {
-      uri: API_BASE + '/' + uuid + '/push',
-      method: 'POST',
-      json: JSON.stringify(data)
-    };
-
-    request(httpOptions, function (error, response, body) {
-      if (!error && response.statusCode == 200) {
-
-        let lastTs = body.processedUntil;
-
-        const stmt = db.prepare('DELETE FROM buffer where ts <= ?');
-        var info = stmt.run(lastTs);
-
-        lastSuccessfulUpdate = Date.now();
-
-        app.debug(`Successfully sent ${info.changes} record(s) to the server`);
-
-      } else if (!error && response.statusCode == 204) {
-        app.debug('Server responded with HTTP-204');
-      } else {
-        app.debug(`Connection to the server failed, retry in ${SUBMIT_INTERVAL} min`);
+    db.all('SELECT * FROM buffer ORDER BY ts', function(err, data) {
+      if (data.length == 0) {
+        app.debug('Local cache is empty, sending an empty ping');
       }
-    });
 
+      let httpOptions = {
+        uri: API_BASE + '/' + uuid + '/push',
+        method: 'POST',
+        json: JSON.stringify(data)
+      };
+
+      request(httpOptions, function (error, response, body) {
+        if (!error && response.statusCode == 200) {
+          let lastTs = body.processedUntil;
+          db.run('DELETE FROM buffer where ts <= ' + lastTs);
+          lastSuccessfulUpdate = Date.now();
+          app.debug(`Successfully sent ${data.length} record(s) to the server`);
+        } else if (!error && response.statusCode == 204) {
+          app.debug('Server responded with HTTP-204');
+        } else {
+          app.debug(`Connection to the server failed, retry in ${SUBMIT_INTERVAL} min`);
+        }
+      });
+    });
   }
 
   function getKeyValue(key, maxAge) {
@@ -669,27 +641,21 @@ module.exports = function(app) {
       case 'navigation.position':
         let source = data.updates[0]['$source'];
         if ((gpsSource) && (source != gpsSource)) {
-            //app.debug(`Skipping position from GPS resource ${source}`);
-	        break;
-	    }
-        //else
-        //  app.debug(`Using position from GPS resource ${source}`);
-
+          app.debug(`Skipping position from GPS resource ${source}`);
+	  break;
+	}
         if (position) {
-          //app.debug(`Using position from GPS resource ${source}`);
-
           let distance = calculateDistance(position.latitude,
                                            position.longitude,
                                            value.latitude,
                                            value.longitude);
-	        let timeBetweenPositions = Date.now() - position.changedOn;
-
-	        if ((timeBetweenPositions <= 2 * 60 * 1000) && (distance >= 5)) {
-              app.error(`Erroneous position reading. ` +
+	  let timeBetweenPositions = Date.now() - position.changedOn;
+	  if ((timeBetweenPositions <= 2 * 60 * 1000) && (distance >= 5)) {
+            app.error(`Erroneous position reading. ` +
 	              `Moved ${distance} miles in ${timeBetweenPositions/1000} seconds. ` +
                       `Ignoring the position: ${position.latitude}, ${position.longitude}`);
-	          return;
-	        }
+	    return;
+	  }
 
           position.changedOn = Date.now();
      
@@ -698,11 +664,11 @@ module.exports = function(app) {
             // updateDatabase() is split to multiple if conditions for better debug messages
 
             // Want submissions every DB_UPDATE_MINUTES at the very least
-	          if (timePassed >= DB_UPDATE_MINUTES * 60 * 1000) {
-                app.debug(`Updating database, ${DB_UPDATE_MINUTES} min passed since last update`);
-                position = value;
-                position.changedOn = Date.now();
-                updateDatabase();
+	    if (timePassed >= DB_UPDATE_MINUTES * 60 * 1000) {
+              app.debug(`Updating database, ${DB_UPDATE_MINUTES} min passed since last update`);
+              position = value;
+              position.changedOn = Date.now();
+              updateDatabase();
             }
 
             // Or a meaningful time passed while moving
@@ -757,9 +723,9 @@ module.exports = function(app) {
         break;
       case 'navigation.courseOverGroundTrue':
         // Keep the previous 3 values
-            courseOverGroundTrue = radiantToDegrees(value);
-	      previousCOGs.unshift(courseOverGroundTrue);
-	      previousCOGs = previousCOGs.slice(0, 6);
+        courseOverGroundTrue = radiantToDegrees(value);
+	previousCOGs.unshift(courseOverGroundTrue);
+	previousCOGs = previousCOGs.slice(0, 6);
         break;
       case 'environment.wind.speedApparent':
         windSpeedApparent = Math.max(windSpeedApparent, metersPerSecondToKnots(value));

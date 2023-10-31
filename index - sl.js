@@ -65,7 +65,6 @@ module.exports = function(app) {
   plugin.start = function(options) {
     configuration = options;
     startPlugin(options);
-    testSD();
   }
 
   plugin.stop =  function() {
@@ -77,14 +76,6 @@ module.exports = function(app) {
       db.close();
     }
   };
-
-  function testSD(){
-
-    let dbFile2= filePath.join('/run/media/mmcblk0p1/triplog', 'saillogger.sqlite3.db');
-    db = new Database(dbFile2);
-    db.exec('CREATE TABLE IF NOT EXISTS buffer(ts REAL, angleSpeedApparent REAL)');
-    
-  }
 
   plugin.schema = {
     type: 'object',
