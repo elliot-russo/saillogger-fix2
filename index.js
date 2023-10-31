@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
+                         /run/media/mmcblk0p1/signalk_plugins
 const sdcard_dataroot = '/run/media/mmcblk0p1/signalk_plugins';
 
 const POLL_INTERVAL = 5            // Poll every N seconds
@@ -82,14 +82,15 @@ module.exports = function(app) {
 
   function testSD(){
 
-    let dbFile2= filePath.join(sdcard_dataroot, '/triplog', 'triplog.sqlite3.db');
-    if (!fs.existsSync(dbFile2))
-      fs.mkdirSync(dbFile2);
+    let folderPath = filePath.join(sdcard_dataroot, '/triplog');
+    if (!fs.existsSync(folderPath))
+      fs.mkdirSync(folderPath);
 
-    app.debug(dbFile2);
-    db = new Database(dbFile2);
-    db.exec('CREATE TABLE IF NOT EXISTS buffer(ts REAL, angleSpeedApparent REAL)');
+    let dbFile= filePath.join(folderPath, 'triplog.sqlite3.db');
     
+    app.debug(dbFile);
+    db = new Database(dbFile);
+    db.exec('CREATE TABLE IF NOT EXISTS buffer(ts REAL, angleSpeedApparent REAL)');
   }
 
   plugin.schema = {
