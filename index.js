@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-                         /run/media/mmcblk0p1/signalk_plugins
+
 const sdcard_dataroot = '/run/media/mmcblk0p1/signalk_plugins';
 
 const POLL_INTERVAL = 5            // Poll every N seconds
