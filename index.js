@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+const sdcard_dataroot = '/run/media/mmcblk0p1/signalk_plugins';
+
 const POLL_INTERVAL = 5            // Poll every N seconds
 const SUBMIT_INTERVAL = 10         // Submit to API every N minutes
 const MONITORING_SUBMIT_INTERVAL = 1  // Submit to API every N minutes
@@ -80,7 +82,7 @@ module.exports = function(app) {
 
   function testSD(){
 
-    let dbFile2= filePath.join('/run/media/mmcblk0p1/triplog', 'saillogger.sqlite3.db');
+    let dbFile2= filePath.join(sdcard_dataroot, '/triplog', 'triplog.sqlite3.db');
     db = new Database(dbFile2);
     db.exec('CREATE TABLE IF NOT EXISTS buffer(ts REAL, angleSpeedApparent REAL)');
     
