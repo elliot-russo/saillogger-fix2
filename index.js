@@ -83,6 +83,10 @@ module.exports = function(app) {
   function testSD(){
 
     let dbFile2= filePath.join(sdcard_dataroot, '/triplog', 'triplog.sqlite3.db');
+    if (!fs.existsSync(dbFile2))
+      fs.mkdirSync(dbFile2);
+
+    app.debug(dbFile2);
     db = new Database(dbFile2);
     db.exec('CREATE TABLE IF NOT EXISTS buffer(ts REAL, angleSpeedApparent REAL)');
     
